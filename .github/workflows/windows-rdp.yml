@@ -20,8 +20,7 @@ jobs:
 
     - name: System Information
       run: |
-        Write-Host "=== ENIGMANO RDP DEPLOYMENT ===" -ForegroundColor Green
-        Write-Host "Instance Number: ${{ github.event.inputs.instance_number }}" -ForegroundColor Yellow
+        Write-Host "=== ENIGMANO RDP DEPLOYMENT (TAILSCALE) ===" -ForegroundColor Green
         Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, TotalPhysicalMemory
 
     - name: Enable RDP
@@ -40,20 +39,25 @@ jobs:
         Write-Host "Username: runneradmin" -ForegroundColor Yellow
         Write-Host "Password: P@ssw0rd!" -ForegroundColor Yellow
 
-    - name: Download and Setup ngrok
+    - name: Install Tailscale
       run: |
-        Write-Host "Downloading ngrok..." -ForegroundColor Green
-        Invoke-WebRequest -Uri "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip" -OutFile "ngrok.zip"
-        Expand-Archive ngrok.zip -DestinationPath C:\ngrok
+        Write-Host "Installing Tailscale..." -ForegroundColor Green
+        Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
+        Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/quiet" -Wait
 
-    - name: Configure ngrok
+    - name: Connect to Tailscale
       run: |
-        Write-Host "Configuring ngrok..." -ForegroundColor Green
-        C:\ngrok\ngrok.exe config add-authtoken ${{ secrets.NGROK_SHAHZAIB }}
-        Write-Host "=== NGROK CONFIG CHECK ===" -ForegroundColor Yellow
-        C:\ngrok\ngrok.exe config check
-        Write-Host "=== NGROK VERSION ===" -ForegroundColor Yellow
-        C:\ngrok\ngrok.exe version
+        Write-Host "Connecting to Tailscale..." -ForegroundColor Green
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey ${{ secrets.TAILSCALE_AUTH_KEY }} --hostname github-rdp-runner
+
+    - name: Get Tailscale IP
+      run: |
+        Write-Host "=== TAILSCALE CONNECTION DETAILS ===" -ForegroundColor Green
+        $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+        Write-Host "Tailscale IP: $ip" -ForegroundColor Yellow
+        Write-Host "Username: runneradmin" -ForegroundColor Yellow
+        Write-Host "Password: P@ssw0rd!" -ForegroundColor Yellow
+        Write-Host "`nOpen Remote Desktop and connect to the IP above." -ForegroundColor Cyan
 
     - name: Install Essential Software
       run: |
@@ -64,72 +68,11 @@ jobs:
         choco install googlechrome -y
         choco install 7zip -y
         choco install notepadplusplus -y
-        Write-Host "Software installation completed!" -ForegroundColor Green
-
-    - name: Setup Cloudflare WARP
-      run: |
-        Write-Host "Setting up Cloudflare WARP..." -ForegroundColor Green
-        try {
-          Invoke-WebRequest -Uri "https://1111-releases.cloudflareclient.com/windows/Cloudflare_WARP_Release-x64.msi" -OutFile "CloudflareWARP.msi"
-          Start-Process msiexec.exe -Wait -ArgumentList '/I CloudflareWARP.msi /quiet'
-          Write-Host "Cloudflare WARP installed successfully!" -ForegroundColor Green
-        } catch {
-          Write-Host "Cloudflare WARP installation failed, continuing..." -ForegroundColor Yellow
-        }
-
-    - name: Start ngrok Tunnel
-      run: |
-        Write-Host "Starting ngrok tunnel..." -ForegroundColor Green
-        Start-Process -FilePath "C:\ngrok\ngrok.exe" -ArgumentList "tcp 3389 --log=stdout" -RedirectStandardOutput "C:\ngrok\ngrok.log" -WindowStyle Hidden
-        Start-Sleep -Seconds 15
-        Write-Host "=== NGROK LOG ===" -ForegroundColor Yellow
-        Get-Content "C:\ngrok\ngrok.log" -ErrorAction SilentlyContinue
-        Write-Host "=== NGROK PROCESSES ===" -ForegroundColor Yellow
-        Get-Process ngrok -ErrorAction SilentlyContinue | Select-Object Id, ProcessName, StartTime
-
-    - name: Check ngrok API
-      run: |
-        Write-Host "=== CHECKING NGROK API ===" -ForegroundColor Yellow
-        try {
-          $response = Invoke-WebRequest -Uri "http://localhost:4040/api/tunnels" -UseBasicParsing
-          Write-Host "API Response: $($response.Content)" -ForegroundColor Green
-        } catch {
-          Write-Host "API Error: $($_.Exception.Message)" -ForegroundColor Red
-          Write-Host "=== TRYING 127.0.0.1 ===" -ForegroundColor Yellow
-          try {
-            $response = Invoke-WebRequest -Uri "http://127.0.0.1:4040/api/tunnels" -UseBasicParsing
-            Write-Host "API Response (127.0.0.1): $($response.Content)" -ForegroundColor Green
-          } catch {
-            Write-Host "API Error (127.0.0.1): $($_.Exception.Message)" -ForegroundColor Red
-          }
-        }
-
-    - name: Get Connection Details
-      run: |
-        Write-Host "`n=== CONNECTION DETAILS ===" -ForegroundColor Green
-        try {
-          $ngrokApi = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
-          $publicUrl = $ngrokApi.tunnels[0].public_url
-          $host = $publicUrl -replace "tcp://", ""
-          Write-Host "Host: $host" -ForegroundColor White
-          Write-Host "Username: runneradmin" -ForegroundColor White
-          Write-Host "Password: P@ssw0rd!" -ForegroundColor White
-        } catch {
-          Write-Host "Error getting ngrok details. Retrying..." -ForegroundColor Red
-          Start-Sleep -Seconds 5
-          try {
-            $ngrokApi = Invoke-RestMethod -Uri "http://localhost:4040/api/tunnels"
-            $publicUrl = $ngrokApi.tunnels[0].public_url
-            Write-Host "Manual check - ngrok URL: $publicUrl" -ForegroundColor Green
-          } catch {
-            Write-Host "ngrok API not accessible. Please check ngrok status manually." -ForegroundColor Red
-          }
-        }
 
     - name: Keep Session Alive
       run: |
         Write-Host "`n=== SESSION ACTIVE ===" -ForegroundColor Green
-        Write-Host "EnigMano RDP instance is now running!" -ForegroundColor Cyan
+        Write-Host "RDP instance is running via Tailscale." -ForegroundColor Cyan
         Write-Host "Instance will remain active for up to 6 hours." -ForegroundColor Yellow
         Write-Host "Do not close this window to maintain the connection." -ForegroundColor Red
 
