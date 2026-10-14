@@ -26,9 +26,31 @@ jobs:
     - name: Enable RDP
       run: |
         Write-Host "Enabling Remote Desktop..." -ForegroundColor Green
+        
+        # Включаем RDP
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        
+        # Запускаем службу RDP
+        Set-Service -Name TermService -StartupType Automatic
+        Start-Service -Name TermService
+        
+        # Проверяем, что служба работает
+        Get-Service TermService | Format-Table -AutoSize
+        
+        # Проверяем, что порт 3389 слушается
+        netstat -an | findstr :3389
+        
+        # Отключаем NLA (часто мешает подключению)
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+        
+        # Отключаем требования TLS (если есть проблемы с шифрованием)
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
+        
+        # Разрешаем RDP в фаерволе
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
+        
+        Write-Host "RDP setup complete" -ForegroundColor Green
 
     - name: Create User Account
       run: |
@@ -65,9 +87,9 @@ jobs:
         Set-ExecutionPolicy Bypass -Scope Process -Force
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
         iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-        choco install googlechrome -y
         choco install 7zip -y
         choco install notepadplusplus -y
+        choco install googlechrome -y --ignore-checksums
 
     - name: Keep Session Alive
       run: |
