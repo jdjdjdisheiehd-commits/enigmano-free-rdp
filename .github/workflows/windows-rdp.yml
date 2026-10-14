@@ -20,36 +20,19 @@ jobs:
 
     - name: System Information
       run: |
-        Write-Host "=== ENIGMANO RDP DEPLOYMENT (TAILSCALE) ===" -ForegroundColor Green
+        Write-Host "=== ENIGMANO RDP DEPLOYMENT (NETBIRD) ===" -ForegroundColor Green
         Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, TotalPhysicalMemory
 
     - name: Enable RDP
       run: |
         Write-Host "Enabling Remote Desktop..." -ForegroundColor Green
-        
-        # Включаем RDP
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
-        
-        # Запускаем службу RDP
         Set-Service -Name TermService -StartupType Automatic
         Start-Service -Name TermService
-        
-        # Проверяем, что служба работает
-        Get-Service TermService | Format-Table -AutoSize
-        
-        # Проверяем, что порт 3389 слушается
-        netstat -an | findstr :3389
-        
-        # Отключаем NLA (часто мешает подключению)
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
-        
-        # Отключаем требования TLS (если есть проблемы с шифрованием)
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
-        
-        # Разрешаем RDP в фаерволе
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         netsh advfirewall firewall set rule group="remote desktop" new enable=Yes
-        
         Write-Host "RDP setup complete" -ForegroundColor Green
 
     - name: Create User Account
@@ -61,25 +44,28 @@ jobs:
         Write-Host "Username: runneradmin" -ForegroundColor Yellow
         Write-Host "Password: P@ssw0rd!" -ForegroundColor Yellow
 
-    - name: Install Tailscale
+    - name: Install NetBird
       run: |
-        Write-Host "Installing Tailscale..." -ForegroundColor Green
-        Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
-        Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+        Write-Host "Installing NetBird..." -ForegroundColor Green
+        Invoke-WebRequest -Uri "https://pkgs.netbird.io/windows/x64" -OutFile "netbird-installer.exe"
+        Start-Process -FilePath ".\netbird-installer.exe" -ArgumentList "/S" -Wait
+        Write-Host "NetBird installed" -ForegroundColor Green
 
-    - name: Connect to Tailscale
+    - name: Connect to NetBird
       run: |
-        Write-Host "Connecting to Tailscale..." -ForegroundColor Green
-        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey ${{ secrets.TAILSCALE_AUTH_KEY }} --hostname github-rdp-runner
+        Write-Host "Connecting to NetBird..." -ForegroundColor Green
+        & "C:\Program Files\NetBird\netbird.exe" up --setup-key ${{ secrets.NETBIRD_SETUP_KEY }}
+        Start-Sleep -Seconds 10
+        & "C:\Program Files\NetBird\netbird.exe" status
 
-    - name: Get Tailscale IP
+    - name: Get NetBird IP
       run: |
-        Write-Host "=== TAILSCALE CONNECTION DETAILS ===" -ForegroundColor Green
-        $ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-        Write-Host "Tailscale IP: $ip" -ForegroundColor Yellow
+        Write-Host "=== NETBIRD CONNECTION DETAILS ===" -ForegroundColor Green
+        $ip = & "C:\Program Files\NetBird\netbird.exe" status --json | ConvertFrom-Json
+        Write-Host "NetBird IP: $($ip.netbirdIp)" -ForegroundColor Yellow
         Write-Host "Username: runneradmin" -ForegroundColor Yellow
         Write-Host "Password: P@ssw0rd!" -ForegroundColor Yellow
-        Write-Host "`nOpen Remote Desktop and connect to the IP above." -ForegroundColor Cyan
+        Write-Host "`nOpen NetBird dashboard and click RDP on this machine." -ForegroundColor Cyan
 
     - name: Install Essential Software
       run: |
@@ -94,9 +80,8 @@ jobs:
     - name: Keep Session Alive
       run: |
         Write-Host "`n=== SESSION ACTIVE ===" -ForegroundColor Green
-        Write-Host "RDP instance is running via Tailscale." -ForegroundColor Cyan
+        Write-Host "RDP instance is running via NetBird." -ForegroundColor Cyan
         Write-Host "Instance will remain active for up to 6 hours." -ForegroundColor Yellow
-        Write-Host "Do not close this window to maintain the connection." -ForegroundColor Red
 
         $counter = 0
         while ($true) {
